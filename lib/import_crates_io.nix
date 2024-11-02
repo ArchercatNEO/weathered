@@ -15,6 +15,7 @@ let
 
   inherit (lib.attrsets)
     mergeAttrsList
+    mapAttrs'
     mapAttrsToList
     ;
 in
@@ -34,11 +35,11 @@ let
         }) ls;
       in
       concatMap (node: find node.path node.type) paths
-    else if lib.elem (crates_io + "/README.md") path then
+    else if lib.strings.hasInfix "README.md" path then
       [ ]
-    else if lib.elem (crates_io + "/config.json") path then
+    else if lib.strings.hasInfix "config.json" path then
       [ ]
-    else if lib.elem (crates_io + "/.github/update-dl-url.yml") path then
+    else if lib.strings.hasInfix "update-dl-url.yml" path then
       [ ]
     else
       [ path ];
@@ -48,8 +49,12 @@ let
   # Type: [AttrsOf Derivation]
   crates =
     let
+      abs = mapAttrs' (name: value: {
+        name = builtins.unsafeDiscardStringContext "${crates_io}/${name}";
+        inherit value;
+      }) (readDir crates_io);
       # Type: [ [Path] ]
-      matrix = mapAttrsToList find (readDir crates_io);
+      matrix = mapAttrsToList find abs;
       # Type: [ Path ]
       flattened = flatten matrix;
       # Type: Path -> Attrset
