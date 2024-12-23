@@ -4,74 +4,43 @@
 }:
 let
   inherit (builtins)
-    map
     readDir
     ;
 
-  inherit (lib.lists)
-    concatMap
-    flatten
-    ;
-
   inherit (lib.attrsets)
-    mergeAttrsList
-    mapAttrs'
-    mapAttrsToList
+    concatMapAttrs
     ;
 in
 
 # Type: Path -> Overlay
 crates_io:
 let
-  # Type: Path -> String -> [Path]
-  find =
+  # Type: Path -> String -> (AttrsOf Derivation)
+  foldCrates =
     path: type:
     if type == "directory" then
-      let
-        ls = readDir path; # {path = type} -> [ { path = ...; type = ...;} ]
-        paths = mapAttrsToList (key: value: {
-          path = "${path}/${key}";
-          type = value;
-        }) ls;
-      in
-      concatMap (node: find node.path node.type) paths
+      readDir path
+      |> concatMapAttrs (name: value: let
+        escape = builtins.unsafeDiscardStringContext "${path}/${name}";
+      in foldCrates escape value)
     else if lib.strings.hasInfix "README.md" path then
-      [ ]
+      { }
     else if lib.strings.hasInfix "config.json" path then
-      [ ]
+      { }
     else if lib.strings.hasInfix "update-dl-url.yml" path then
-      [ ]
-    else
-      [ path ];
+      { }
+    else let 
+      drv = import_crate path;
+      functor = builtins.trace drv.pname drv;
+    in 
+      {
+        "${functor.pname}" = callPackage functor { };
+      };
 
   callPackage = lib.callPackageWith pkgs;
 
   # Type: [AttrsOf Derivation]
-  pkgs =
-    let
-      mapPaths = (
-        name: value: {
-          name = builtins.unsafeDiscardStringContext "${crates_io}/${name}";
-          inherit value;
-        }
-      );
-
-      crateToAttrs =
-        crate:
-        let
-          functor = import_crate crate;
-        in
-        {
-          "${functor.pname}" = callPackage functor { };
-        };
-
-    in
-    readDir crates_io
-    |> mapAttrs' mapPaths
-    |> mapAttrsToList find
-    |> flatten
-    |> map crateToAttrs
-    |> mergeAttrsList;
+  pkgs = foldCrates crates_io "directory";
 
 in
 pkgs

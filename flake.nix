@@ -78,7 +78,7 @@
         formatter = (treefmt.lib.evalModule pkgs ./treefmt.nix).config.build.wrapper;
 
         inherit lib;
-        packages.trunk = crates.trunk;
+        packages.default = crates.trunk;
       }
     );
 }

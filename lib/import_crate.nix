@@ -9,13 +9,11 @@
 crate:
 let
   versions =
-    let
-      readAndTrace = builtins.readFile crate;
-      crates = lib.trim readAndTrace;
-      splitNewline = lib.splitString "\n";
-      fromJson = builtins.map builtins.fromJSON;
-    in
-    fromJson (splitNewline crates);
+    builtins.readFile crate
+    |> lib.trim
+    |> lib.splitString "\n"
+    |> builtins.map builtins.fromJSON;
+
   #version.name: the id of the crate
   #version.vers: the version of this crate
   #version.deps: list of deps
