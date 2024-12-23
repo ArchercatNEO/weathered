@@ -47,17 +47,15 @@ let
   callPackage = lib.callPackageWith pkgs;
 
   # Type: [AttrsOf Derivation]
-  crates =
+  pkgs =
     let
-      abs = mapAttrs' (name: value: {
-        name = builtins.unsafeDiscardStringContext "${crates_io}/${name}";
-        inherit value;
-      }) (readDir crates_io);
-      # Type: [ [Path] ]
-      matrix = mapAttrsToList find abs;
-      # Type: [ Path ]
-      flattened = flatten matrix;
-      # Type: Path -> Attrset
+      mapPaths = (
+        name: value: {
+          name = builtins.unsafeDiscardStringContext "${crates_io}/${name}";
+          inherit value;
+        }
+      );
+
       crateToAttrs =
         crate:
         let
@@ -68,8 +66,12 @@ let
         };
 
     in
-    map crateToAttrs flattened;
+    readDir crates_io
+    |> mapAttrs' mapPaths
+    |> mapAttrsToList find
+    |> flatten
+    |> map crateToAttrs
+    |> mergeAttrsList;
 
-  pkgs = mergeAttrsList crates;
 in
 pkgs

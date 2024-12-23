@@ -6,6 +6,11 @@
 
     flake-utils.url = "github:numtide/flake-utils?ref=main";
 
+    treefmt = {
+      url = "github:numtide/treefmt-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     fenix = {
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -22,6 +27,7 @@
       self,
       nixpkgs,
       flake-utils,
+      treefmt,
       fenix,
       crates_io,
     }:
@@ -54,9 +60,8 @@
           };
           import_crates_io = pkgs.callPackage ./lib/import_crates_io.nix {
             inherit (lib) import_crate;
-           };
+          };
         };
-
 
         crates = lib.import_crates_io crates_io;
       in
@@ -69,6 +74,8 @@
             pkgs.llvmPackages.bintools
           ];
         };
+
+        formatter = (treefmt.lib.evalModule pkgs ./treefmt.nix).config.build.wrapper;
 
         inherit lib;
         packages.trunk = crates.trunk;

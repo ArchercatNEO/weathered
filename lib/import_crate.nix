@@ -8,12 +8,14 @@
 # Type: Path -> Functor -> Derivation
 crate:
 let
-  versions = let
-    readAndTrace = builtins.readFile crate;
-    crates = lib.trim readAndTrace;
-    splitNewline = lib.splitString "\n";
-    fromJson = builtins.map builtins.fromJSON;
-  in fromJson (splitNewline crates);
+  versions =
+    let
+      readAndTrace = builtins.readFile crate;
+      crates = lib.trim readAndTrace;
+      splitNewline = lib.splitString "\n";
+      fromJson = builtins.map builtins.fromJSON;
+    in
+    fromJson (splitNewline crates);
   #version.name: the id of the crate
   #version.vers: the version of this crate
   #version.deps: list of deps
