@@ -2,6 +2,7 @@
   lib,
   fetchCrate,
   make_crate,
+  writeShellScript,
   ...
 }:
 
@@ -10,8 +11,8 @@ crate:
 let
   versions =
     builtins.readFile crate
-    |> lib.trim
     |> lib.splitString "\n"
+    |> builtins.filter (json: json != "")
     |> builtins.map builtins.fromJSON;
 
   #version.name: the id of the crate
@@ -24,33 +25,83 @@ let
   #TODO: version.yanked
   #TODO: version.rust_version
 
-  versionToFunctor = version': {
-    pname = version'.name;
-    version = version'.vers;
+  versionToFunctor = sparce: rec {
+    pname = sparce.name;
+    version = sparce.vers;
 
     src = fetchCrate {
-      pname = version'.name;
-      version = version'.vers;
+      pname = sparce.name;
+      version = sparce.vers;
+      hash = "sha256-${sparce.cksum}="; # this doesn't work
       registryDl = "https://static.crates.io/crates";
-      #extension = ".gz";
     };
 
     #TODO: expose build/runtime as <dep.value> strings in self
     #Can't expose as derivations before using callPackage
     __functor =
       self: args:
-      make_crate (
-        self
-        // {
-          buildDependencies = builtins.filter (dep: dep.kind == "dev") version'.deps; # there's more in this
+      let
+        # this is inside because we depend on args
+        deps = rec {
+          buildDependencies =
+            sparce.deps |> builtins.filter (dep: dep.kind == "dev") |> builtins.map (dep: args."${dep.name}"); # does not lock, just uses latest
+
           runtimeDependencies =
+            sparce.deps
+            |> builtins.filter (dep: dep.kind == "normal")
+            |> builtins.map (dep: args."${dep.name}"); # does not lock, just uses latest
+
+          transativeDependencies =
             let
-              deps = builtins.filter (dep: dep.kind == "normal") version'.deps;
-              drvs = builtins.map (dep: args."${dep.name}"."${dep.version}") deps;
+              expandDeps = (dep: dep.transativeDependencies |> builtins.concatMap expandDeps |> lib.unique);
             in
-            drvs;
-        }
-      );
+            buildDependencies ++ runtimeDependencies |> builtins.concatMap expandDeps;
+
+          make_lock =
+            let
+              crates =
+                transativeDependencies
+                |> builtins.map (crate: "(${crate.pname} ${crate.version})")
+                |> builtins.concatStringsSep " ";
+            in
+            writeShellScript "${sparce.name}-make-lock.sh" ''
+              set -euo pipefail
+              shopt -s nullglob
+
+              crates = (${crates})
+
+              echo "["
+
+              for crate in crates; do
+                echo " {"
+
+                name=$\{crate[0]}
+                version=$\{crate[1]}
+                hash=$(nix-prefetch-url "https://static.crates.io/crates/$name/$name-$version.crate")
+                
+                echo "  \"pname\": $name,"
+                echo "  \"version\": $version,"
+                echo "  \"hash\": $hash"
+
+                echo " },"
+              done
+
+              echo "]"
+
+            '';
+        };
+
+        # we need to parse the Cargo.toml for everything after this
+        cargo =
+          let
+            toml = src + ./Cargo.toml |> lib.importTOML;
+          in
+          {
+            edition = toml.edition;
+            meta = { };
+          };
+      in
+      make_crate (self // deps // cargo);
     __functionArgs =
       let
         required = dep: {
@@ -62,7 +113,7 @@ let
           value = false;
         };
 
-        deps = builtins.map required version'.deps;
+        deps = builtins.map required sparce.deps;
       in
       builtins.listToAttrs deps;
   };
