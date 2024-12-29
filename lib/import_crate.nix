@@ -2,7 +2,7 @@
   lib,
   fetchCrate,
   make_crate,
-  writeShellScript,
+  runCommandLocal,
   ...
 }:
 
@@ -29,12 +29,26 @@ let
     pname = sparce.name;
     version = sparce.vers;
 
-    src = fetchCrate {
-      pname = sparce.name;
-      version = sparce.vers;
-      hash = "sha256-${sparce.cksum}="; # this doesn't work
-      registryDl = "https://static.crates.io/crates";
-    };
+    src = let 
+      compressed = fetchCrate {
+        pname = sparce.name;
+        version = sparce.vers;
+        hash = builtins.convertHash {
+          hash = sparce.cksum;
+          hashAlgo = "sha256";
+          toHashFormat = "sri";
+        };
+        unpack = false;
+        registryDl = "https://static.crates.io/crates";
+      }; in runCommandLocal "unpacked-${pname}" {} ''
+          unpackDir=$(mktemp -d)
+
+          tar -xf ${compressed} -C "$unpackDir"
+          mv "$unpackDir"/${pname}-${version} "$out"
+          chmod 755 "$out"
+
+          rm -r "$unpackDir"
+      '';
 
     #TODO: expose build/runtime as <dep.value> strings in self
     #Can't expose as derivations before using callPackage
@@ -56,48 +70,15 @@ let
               expandDeps = (dep: dep.transativeDependencies |> builtins.concatMap expandDeps |> lib.unique);
             in
             buildDependencies ++ runtimeDependencies |> builtins.concatMap expandDeps;
-
-          make_lock =
-            let
-              crates =
-                transativeDependencies
-                |> builtins.map (crate: "(${crate.pname} ${crate.version})")
-                |> builtins.concatStringsSep " ";
-            in
-            writeShellScript "${sparce.name}-make-lock.sh" ''
-              set -euo pipefail
-              shopt -s nullglob
-
-              crates = (${crates})
-
-              echo "["
-
-              for crate in crates; do
-                echo " {"
-
-                name=$\{crate[0]}
-                version=$\{crate[1]}
-                hash=$(nix-prefetch-url "https://static.crates.io/crates/$name/$name-$version.crate")
-                
-                echo "  \"pname\": $name,"
-                echo "  \"version\": $version,"
-                echo "  \"hash\": $hash"
-
-                echo " },"
-              done
-
-              echo "]"
-
-            '';
         };
 
         # we need to parse the Cargo.toml for everything after this
         cargo =
           let
-            toml = src + ./Cargo.toml |> lib.importTOML;
+            toml = lib.importTOML "${src}/Cargo.toml";
           in
           {
-            edition = toml.edition;
+            edition = toml.package.edition;
             meta = { };
           };
       in
@@ -106,11 +87,11 @@ let
       let
         required = dep: {
           name = dep.name;
-          value = true;
+          value = false;
         };
         oprional = dep: {
           name = dep.name;
-          value = false;
+          value = true;
         };
 
         deps = builtins.map required sparce.deps;

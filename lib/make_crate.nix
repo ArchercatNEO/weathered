@@ -33,9 +33,9 @@ let
   type' =
     if type != "" then
       type
-    else if builtins.pathExists (src + ./main.rs) then
+    else if builtins.pathExists "${src}/main.rs" then
       "bin"
-    else if builtins.pathExists (src + ./lib.rs) then
+    else if builtins.pathExists "${src}/lib.rs" then
       "dylib"
     else
       throw "Crate type not given and no main/lib.rs file found";
