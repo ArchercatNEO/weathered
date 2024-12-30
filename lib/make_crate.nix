@@ -15,27 +15,24 @@
   type ? "",
   src,
 
-  buildDependencies ? [ ],
-  runtimeDependencies ? [ ],
-  transativeDependencies ? [ ],
-  make_lock ? null,
+  buildDependencies ? { },
+  runtimeDependencies ? { },
 
   system ? builtins.currentSystem,
   meta,
   ...
 }:
 let
-  mapExternsAndRpath = builtins.concatMap (dep: [
-    "--extern ${dep.pname}=${dep}/lib/lib${dep.pname}.so"
-  ]);
-  linkFlags = mapExternsAndRpath runtimeDependencies;
+  linkFlags =
+    runtimeDependencies
+    |> lib.mapAttrsToList (name: value: "--extern ${name}=${value}/lib/lib${value.pname}.so");
 
   type' =
     if type != "" then
       type
-    else if builtins.pathExists "${src}/main.rs" then
+    else if builtins.pathExists "${src}/src/main.rs" then
       "bin"
-    else if builtins.pathExists "${src}/lib.rs" then
+    else if builtins.pathExists "${src}/src/lib.rs" then
       "dylib"
     else
       throw "Crate type not given and no main/lib.rs file found";
@@ -62,6 +59,4 @@ derivation {
   ];
 
   inherit linkFlags;
-
-  inherit transativeDependencies make_lock;
 }

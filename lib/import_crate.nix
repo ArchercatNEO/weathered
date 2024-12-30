@@ -26,28 +26,33 @@ let
   #TODO: version.rust_version
 
   versionToFunctor = sparce: rec {
+    system = "x86_64-linux";
+
     pname = sparce.name;
     version = sparce.vers;
 
-    src = let 
-      compressed = fetchCrate {
-        pname = sparce.name;
-        version = sparce.vers;
-        hash = builtins.convertHash {
-          hash = sparce.cksum;
-          hashAlgo = "sha256";
-          toHashFormat = "sri";
+    src =
+      let
+        compressed = fetchCrate {
+          pname = sparce.name;
+          version = sparce.vers;
+          hash = builtins.convertHash {
+            hash = sparce.cksum;
+            hashAlgo = "sha256";
+            toHashFormat = "sri";
+          };
+          unpack = false;
+          registryDl = "https://static.crates.io/crates";
         };
-        unpack = false;
-        registryDl = "https://static.crates.io/crates";
-      }; in runCommandLocal "unpacked-${pname}" {} ''
-          unpackDir=$(mktemp -d)
+      in
+      runCommandLocal "unpacked-${pname}" { } ''
+        unpackDir=$(mktemp -d)
 
-          tar -xf ${compressed} -C "$unpackDir"
-          mv "$unpackDir"/${pname}-${version} "$out"
-          chmod 755 "$out"
+        tar -xf ${compressed} -C "$unpackDir"
+        mv "$unpackDir"/${pname}-${version} "$out"
+        chmod 755 "$out"
 
-          rm -r "$unpackDir"
+        rm -r "$unpackDir"
       '';
 
     #TODO: expose build/runtime as <dep.value> strings in self
@@ -55,38 +60,40 @@ let
     __functor =
       self: args:
       let
+
         # this is inside because we depend on args
-        deps = rec {
-          buildDependencies =
-            sparce.deps |> builtins.filter (dep: dep.kind == "dev") |> builtins.map (dep: args."${dep.name}"); # does not lock, just uses latest
-
-          runtimeDependencies =
-            sparce.deps
-            |> builtins.filter (dep: dep.kind == "normal")
-            |> builtins.map (dep: args."${dep.name}"); # does not lock, just uses latest
-
-          transativeDependencies =
-            let
-              expandDeps = (dep: dep.transativeDependencies |> builtins.concatMap expandDeps |> lib.unique);
-            in
-            buildDependencies ++ runtimeDependencies |> builtins.concatMap expandDeps;
-        };
-
-        # we need to parse the Cargo.toml for everything after this
-        cargo =
+        deps =
           let
-            toml = lib.importTOML "${src}/Cargo.toml";
+            cratesToDrvs =
+              filter: crates:
+              crates
+              |> builtins.filter filter
+              |> builtins.map (crate: {
+                inherit (crate) name;
+                value = if crate ? package then args."${crate.package}" else args."${crate.name}";
+              })
+              |> builtins.listToAttrs;
           in
           {
-            edition = toml.package.edition;
+            buildDependencies = cratesToDrvs (dep: dep.kind == "dev") sparce.deps;
+            runtimeDependencies = cratesToDrvs (dep: dep.kind == "normal") sparce.deps;
+          };
+
+        # we need to parse the Cargo.toml for everything after this
+        manifest =
+          let
+            cargo = lib.importTOML "${src}/Cargo.toml";
+          in
+          {
+            edition = cargo.package.edition or "2015";
             meta = { };
           };
       in
-      make_crate (self // deps // cargo);
+      make_crate (self // deps // manifest);
     __functionArgs =
       let
         required = dep: {
-          name = dep.name;
+          name = if dep ? package then dep.package else dep.name;
           value = false;
         };
         oprional = dep: {
