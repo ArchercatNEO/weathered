@@ -5,18 +5,29 @@
   gcc,
   rustc,
 }:
-
+let
+  inherit (lib) mapAttrsToList concatStringsSep makeBinPath;
+in
 {
   name ? "${pname}-${version}",
   pname,
   version,
   edition ? "2021",
 
-  type ? "",
   src,
+
+  lib ? { },
+  bin ? [ ],
+  examples ? [ ],
+  bench ? [ ],
+  test ? [ ],
 
   buildDependencies ? { },
   runtimeDependencies ? { },
+
+  rustFlags ? [ ],
+  libFlags ? [ ],
+  binFlags ? [ ],
 
   system ? builtins.currentSystem,
   meta,
@@ -25,38 +36,73 @@
 let
   linkFlags =
     runtimeDependencies
-    |> lib.mapAttrsToList (name: value: "--extern ${name}=${value}/lib/lib${value.pname}.so");
+    |> (val: builtins.trace name val)
+    |> mapAttrsToList (name: value: "--extern ${name}=${value}/lib/lib${value.pname}.so")
+    |> (val: builtins.trace val val);
 
-  type' =
-    if type != "" then
-      type
-    else if builtins.pathExists "${src}/src/main.rs" then
-      "bin"
-    else if builtins.pathExists "${src}/src/lib.rs" then
-      "dylib"
-    else
-      throw "Crate type not given and no main/lib.rs file found";
+  rustcFlags =
+    rustFlags
+    ++ linkFlags
+    ++ [
+      "--edition ${edition}"
+      "-C embed-bitcode=no"
+      "-C debuginfo=2"
+      "-C prefer-dynamic"
+    ];
+
 in
 derivation {
   inherit
     name
     pname
-    edition
     system
     src
     ;
 
-  type = type';
-
-  builder = if type == "dylib" then ./make_crate_lib.sh else ./make_crate_bin.sh;
+  builder = "${bash}/bin/bash";
+  args = [ ./make_crate.sh ];
 
   outputs = [ "out" ];
 
-  PATH = lib.makeBinPath [
+  LIB =
+    if lib ? path then
+      [
+        lib.path
+        "--crate-name ${lib.name or pname}"
+        "--crate-type dylib"
+      ]
+      ++ libFlags
+      ++ rustcFlags
+    else
+      "";
+
+  BIN =
+    let
+      binToArgs =
+        bin:
+        (
+          [
+            bin.path
+            "--crate-name ${bin.name or pname}"
+            "--crate-type bin"
+            "-C rpath"
+          ]
+          ++ binFlags
+          ++ rustcFlags
+        )
+        |> concatStringsSep " "
+        |> (str: "${str}");
+    in
+    builtins.map binToArgs bin |> concatStringsSep ":";
+
+  #Do these build anything?
+  EXAMPLE = [ ];
+  TEST = [ ];
+  BENCH = [ ];
+
+  PATH = makeBinPath [
     coreutils
     gcc
     rustc
   ];
-
-  inherit linkFlags;
 }

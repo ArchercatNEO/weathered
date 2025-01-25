@@ -19,14 +19,7 @@ let
   foldCrates =
     path: type:
     if type == "directory" then
-      readDir path
-      |> concatMapAttrs (
-        name: value:
-        let
-          escape = builtins.unsafeDiscardStringContext "${path}/${name}";
-        in
-        foldCrates escape value
-      )
+      readDir path |> concatMapAttrs (name: value: foldCrates "${path}/${name}" value)
     else if lib.strings.hasInfix "README.md" path then
       { }
     else if lib.strings.hasInfix "config.json" path then
